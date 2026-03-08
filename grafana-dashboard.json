@@ -1,0 +1,71 @@
+{
+  "dashboard": {
+    "title": "Docker Compose Health",
+    "uid": "docker-compose-health",
+    "version": 1,
+    "schemaVersion": 36,
+    "refresh": "10s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Service Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "docker_compose_service_up",
+            "legendFormat": "{{service}}"
+          }
+        ],
+        "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } } }
+      },
+      {
+        "id": 2,
+        "title": "CPU Usage %",
+        "type": "graph",
+        "yAxes": [{ "unit": "percentunit" }],
+        "targets": [
+          {
+            "expr": "docker_compose_cpu_percent",
+            "legendFormat": "{{service}}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Memory Usage",
+        "type": "graph",
+        "yAxes": [{ "unit": "bytes" }],
+        "targets": [
+          {
+            "expr": "docker_compose_memory_bytes",
+            "legendFormat": "{{service}}"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Container Restarts",
+        "type": "graph",
+        "yAxes": [{ "unit": "short" }],
+        "targets": [
+          {
+            "expr": "rate(docker_compose_restart_count_total[1m])",
+            "legendFormat": "{{service}}"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Service States",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "docker_compose_container_state",
+            "legendFormat": "{{service}}: {{state}}"
+          }
+        ]
+      }
+    ]
+  }
+}

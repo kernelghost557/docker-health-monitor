@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  docker-health-monitor:
+    build: .
+    container_name: docker-health-monitor
+    ports:
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config:/config:ro
+    environment:
+      - DOCKER_HEALTH_COMPOSE_PATH=/config/docker-compose.yml
+      - DOCKER_HEALTH_INTERVAL=30
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
