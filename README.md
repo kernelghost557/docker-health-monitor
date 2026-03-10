@@ -10,9 +10,9 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue?logo=python)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub repo](https://img.shields.io/github/stars/KernelGhost/docker-health-monitor?style=social)](https://github.com/KernelGhost/docker-health-monitor)
-[![CI](https://github.com/KernelGhost/docker-health-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/KernelGhost/docker-health-monitor/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/KernelGhost/docker-health-monitor/branch/main/graph/badge.svg)](https://codecov.io/gh/KernelGhost/docker-health-monitor)
+[![GitHub repo](https://img.shields.io/github/stars/kernelghost557/docker-health-monitor?style=social)](https://github.com/kernelghost557/docker-health-monitor)
+[![CI](https://github.com/kernelghost557/docker-health-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/kernelghost557/docker-health-monitor/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/kernelghost557/docker-health-monitor/branch/main/graph/badge.svg)](https://codecov.io/gh/kernelghost557/docker-health-monitor)
 
 </div>
 
@@ -134,7 +134,7 @@ docker run -d \
 ## 🛠️ Development
 
 ```bash
-git clone https://github.com/KernelGhost/docker-health-monitor.git
+git clone https://github.com/kernelghost557/docker-health-monitor.git
 cd docker-health-monitor
 
 poetry install
@@ -192,11 +192,11 @@ docker-health-monitor/
 
 ## 📜 License
 
-MIT © [KernelGhost](https://github.com/KernelGhost)
+MIT © [kernelghost557](https://github.com/kernelghost557)
 
 ---
 
 ## 🙋 Support
 
-- Issues: https://github.com/KernelGhost/docker-health-monitor/issues
-- Discussions: https://github.com/KernelGhost/docker-health-monitor/discussions
+- Issues: https://github.com/kernelghost557/docker-health-monitor/issues
+- Discussions: https://github.com/kernelghost557/docker-health-monitor/discussions
