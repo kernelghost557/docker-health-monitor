@@ -21,7 +21,7 @@ CONTAINER_STATE = Gauge(
     "Container state (1 if in given state, else 0)",
     ["service", "state"]
 )
-RESTART_COUNT = Counter(
+RESTART_COUNT = Gauge(
     "docker_compose_restart_count",
     "Number of container restarts",
     ["service"]
@@ -59,7 +59,7 @@ class MetricsExporter:
             # But Prometheus best: gauge with state label, set 1 if matches.
             CONTAINER_STATE.labels(service=m.name, state=m.state).set(1)
             # Zero out other states? Not necessary if using 'state' label - each combination is separate.
-            RESTART_COUNT.labels(service=m.name).inc(m.restart_count)  # Note: this will double-count if scraped multiple times; but counters are additive. For real usage, we would track previous restart count and compute delta. For MVP, acceptable.
+            RESTART_COUNT.labels(service=m.name).set(m.restart_count)
             CPU_PERCENT.labels(service=m.name).set(m.cpu_percent)
             MEMORY_BYTES.labels(service=m.name).set(m.memory_bytes)
 

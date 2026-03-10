@@ -11,6 +11,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue?logo=python)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub repo](https://img.shields.io/github/stars/KernelGhost/docker-health-monitor?style=social)](https://github.com/KernelGhost/docker-health-monitor)
+[![CI](https://github.com/KernelGhost/docker-health-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/KernelGhost/docker-health-monitor/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/KernelGhost/docker-health-monitor/branch/main/graph/badge.svg)](https://codecov.io/gh/KernelGhost/docker-health-monitor)
 
 </div>
 
@@ -62,7 +64,7 @@ docker-health-monitor status --compose-path /path/to/docker-compose.yml
 |--------|------|--------|-------------|
 | `docker_compose_service_up` | gauge | `service` | 1 if running, 0 otherwise |
 | `docker_compose_container_state` | gauge | `service`, `state` | 1 if container in given state (running, exited, unhealthy…) |
-| `docker_compose_restart_count` | counter | `service` | How many times container restarted |
+| `docker_compose_restart_count` | gauge | `service` | How many times container restarted (absolute value) |
 | `docker_compose_cpu_percent` | gauge | `service` | CPU usage % |
 | `docker_compose_memory_bytes` | gauge | `service` | Memory usage in bytes |
 
@@ -140,19 +142,39 @@ poetry run pytest
 poetry run docker-health-monitor status --compose-path ../your-compose.yml
 ```
 
-**Project structure:**
+### Quality checks
+
+- **Linting:** `poetry run ruff check src tests`
+- **Type checking:** `poetry run mypy src tests`
+- **Tests with coverage:** `poetry run pytest --cov`
+- **Pre-commit hooks:** After `pre-commit install`, hooks will run on commit (ruff, mypy, pytest).
+
+### CI/CD
+
+GitHub Actions workflow runs on every push and PR:
+- Ruff linting
+- Mypy type checking
+- Pytest with coverage
+- Upload coverage to Codecov
+
+### Project structure
 ```
 docker-health-monitor/
 ├── src/docker_health_monitor/
-│   ├── collector.py   # сбор метрик через Docker SDK
+│   ├── collector.py   # сбор метрик через Docker CLI
 │   ├── exporter.py    # HTTP endpoint (/metrics) для Prometheus
 │   ├── cli.py         # CLI (click): status, serve
 │   └── __init__.py
 ├── tests/
+│   └── test_collector.py
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 ├── Dockerfile
 ├── docker-compose.yml
 ├── grafana-dashboard.json
 ├── pyproject.toml
+├── .pre-commit-config.yaml
 └── README.md
 ```
 

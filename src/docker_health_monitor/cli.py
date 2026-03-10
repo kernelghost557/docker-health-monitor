@@ -2,12 +2,14 @@
 
 import json
 import logging
+import signal
 import sys
 from pathlib import Path
 
 import click
 from rich.console import Console
 from rich.table import Table
+from socketserver import ThreadingMixIn
 
 from .collector import DockerComposeCollector
 from .exporter import MetricsExporter
@@ -86,6 +88,10 @@ def serve(compose_path: Optional[Path], port: int):
     collector = DockerComposeCollector(compose_path=compose_path)
     exporter = MetricsExporter()
 
+    class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+        """Handle requests in separate threads."""
+        pass
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path == "/metrics":
@@ -98,6 +104,7 @@ def serve(compose_path: Optional[Path], port: int):
                     self.end_headers()
                     self.wfile.write(data)
                 except Exception as e:
+                    logger.error(f"Error generating metrics: {e}")
                     self.send_error(500, str(e))
             elif self.path == "/healthz":
                 self.send_response(200)
@@ -107,16 +114,23 @@ def serve(compose_path: Optional[Path], port: int):
                 self.send_error(404, "Not Found")
 
         def log_message(self, fmt, *args):
-            # Suppress logs
+            # Suppress default logs; we'll use our own if needed
             pass
 
     console.print(f"[green]Starting server on http://0.0.0.0:{port}/metrics[/green]")
-    try:
-        server = HTTPServer(("0.0.0.0", port), Handler)
-        server.serve_forever()
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Shutting down.[/yellow]")
+    server = ThreadedHTTPServer(("0.0.0.0", port), Handler)
+    # Graceful shutdown on SIGTERM/SIGINT
+    def signal_handler(signum, frame):
+        console.print("\n[yellow]Received shutdown signal. Stopping server...[/yellow]")
+        server.shutdown()
+        console.print("[green]Server stopped.[/green]")
         sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        server.serve_forever()
     except Exception as e:
         console.print(f"[red]Server error:[/red] {e}")
         sys.exit(1)
