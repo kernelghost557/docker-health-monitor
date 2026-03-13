@@ -5,6 +5,7 @@ import logging
 import signal
 import sys
 from pathlib import Path
+from typing import Optional
 
 import click
 from rich.console import Console
@@ -13,6 +14,8 @@ from socketserver import ThreadingMixIn
 
 from .collector import DockerComposeCollector
 from .exporter import MetricsExporter
+from .config import DockerHealthConfig
+from .alerter import Alerter
 
 console = Console()
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -134,6 +137,67 @@ def serve(compose_path: Optional[Path], port: int):
     except Exception as e:
         console.print(f"[red]Server error:[/red] {e}")
         sys.exit(1)
+
+
+@main.command()
+@click.option("--compose-path", type=click.Path(path_type=Path), help="Path to docker-compose.yml")
+@click.option("--config", "config_path", type=click.Path(path_type=Path), help="Path to config file")
+@click.option("--json/--no-json", default=False, help="Output raw JSON instead of table")
+def monitor(compose_path: Optional[Path], config_path: Optional[Path], json: bool):
+    """Check service health and send alerts if thresholds exceeded."""
+    # Load config
+    cfg = DockerHealthConfig.load(config_path) if config_path else DockerHealthConfig()
+    # Override compose_path from CLI if provided
+    if compose_path:
+        cfg.compose_path = compose_path
+
+    collector = DockerComposeCollector(compose_path=cfg.compose_path)
+    try:
+        metrics = collector.get_metrics()
+    except Exception as e:
+        console.print(f"[red]Error collecting metrics:[/red] {e}")
+        sys.exit(1)
+
+    # Apply include/exclude filters
+    if cfg.include_services:
+        metrics = [m for m in metrics if m.name in cfg.include_services]
+    if cfg.exclude_services:
+        metrics = [m for m in metrics if m.name not in cfg.exclude_services]
+
+    # Show status table if not json
+    if not json:
+        table = Table(title="Docker Compose Services")
+        table.add_column("Service", style="cyan")
+        table.add_column("Container", style="magenta")
+        table.add_column("Up", justify="center")
+        table.add_column("State", style="yellow")
+        table.add_column("Restarts", justify="right")
+        table.add_column("CPU %", justify="right")
+        table.add_column("Memory", justify="right")
+        for m in metrics:
+            up_str = "[green]●[/green]" if m.up else "[red]○[/red]"
+            state_color = "green" if m.up else "red"
+            mem_mb = m.memory_bytes / (1024*1024)
+            mem_str = f"{mem_mb:.1f} MiB"
+            table.add_row(
+                m.name,
+                m.container_name,
+                up_str,
+                f"[{state_color}]{m.state}[/{state_color}]",
+                str(m.restart_count),
+                f"{m.cpu_percent:.2f}%",
+                mem_str,
+            )
+        console.print(table)
+
+    # Check alerts
+    if cfg.alert.rules and cfg.alert.channels:
+        alerter = Alerter(rules=cfg.alert.rules, channels=cfg.alert.channels)
+        alerts_sent = alerter.check_and_alert(metrics)
+        if alerts_sent > 0:
+            console.print(f"[yellow]Sent {alerts_sent} alert notifications[/yellow]")
+    else:
+        console.print("[cyan]No alert rules or channels configured[/cyan]")
 
 
 if __name__ == "__main__":
