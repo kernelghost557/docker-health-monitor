@@ -47,18 +47,21 @@ class MetricsExporter:
 
     def update(self, metrics: Iterable[ServiceMetrics]):
         """Update Prometheus metrics from collected data."""
-        # Reset previous values: we'll set all known labels to 0 first? Simpler: just set new values.
-        # For Counter we add delta; for Gauges we set.
-        # We'll accumulate counter increments across scrapes, so need to track previous values? 
-        # Simpler: Counter we add diff; but for MVP just set() is okay for gauges, and inc for counter.
-        # To avoid re-registering, we just set values on global metrics.
+        # To avoid stale state labels, we need to reset all state gauges for each service before setting current state.
+        # Define known Docker states (from Docker API). We'll reset for all services in current scrape.
+        possible_states = ["running", "exited", "paused", "restarting", "unhealthy", "dead", "created", "removing"]
+        # Collect service names from this scrape.
+        service_names = [m.name for m in metrics]
+
+        # Clear all state labels for these services.
+        for svc in service_names:
+            for st in possible_states:
+                CONTAINER_STATE.labels(service=svc, state=st).set(0)
+
+        # Set current values.
         for m in metrics:
             SERVICE_UP.labels(service=m.name).set(1 if m.up else 0)
-            # Container state: set 1 for current state, 0 for others we care? We'll export multiple labels for each state.
-            # For simplicity, expose one metric per service for its current state as value 1.
-            # But Prometheus best: gauge with state label, set 1 if matches.
             CONTAINER_STATE.labels(service=m.name, state=m.state).set(1)
-            # Zero out other states? Not necessary if using 'state' label - each combination is separate.
             RESTART_COUNT.labels(service=m.name).set(m.restart_count)
             CPU_PERCENT.labels(service=m.name).set(m.cpu_percent)
             MEMORY_BYTES.labels(service=m.name).set(m.memory_bytes)

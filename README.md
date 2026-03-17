@@ -2,7 +2,7 @@
 
 **Prometheus exporter + console status + alerting for Docker Compose stacks.**
 
-Показывает здоровье, CPU, память, рестарты контейнеров. Авто-дискавер `docker-compose.yml`. Готов к Grafana dashboards. Теперь с алертами через Slack, Telegram, Discord.
+Показывает здоровье, CPU, память, рестарты контейнеров. Авто-дискавер `docker-compose.yml`. Готов к Grafana dashboards. Теперь с алертами через Slack, Telegram, Discord. Исправлена метрика `container_state` — теперь точное отображение состояний без накопления.
 
 ---
 
@@ -22,11 +22,14 @@
 
 Если у тебя дома/в тестовом стенде крутится `docker-compose.yml`, а хочешь видеть:
 
-- ✅ Running / unhealthy / exited
+- ✅ Running / unhealthy / exited (точное состояние, без артефактов)
 - ⚡ CPU / RAM usage per service
 - 🔄 Restart counts
 - 📈 Графики в Grafana
 - 🚨 **Alerts** to Slack / Telegram / Discord when thresholds breached
+- 📺 **Live watch mode** для непрерывного мониторинга прямо в терминале
+- ⭐ **Favorites filter**: Мониторинг только избранных сервисов
+- 🧠 **Smart alerts**: Алерты только при изменении состояния, без спама
 
 — это инструмент. Ничего лишнего, только метрики и уведомления.
 
@@ -75,21 +78,13 @@ alert:
     - metric: cpu_percent
       threshold: 80.0
       comparison: ">"
-      # optional: only alert when service is in these states
       for_states: ["running"]
     - metric: memory_bytes
-      threshold: 1073741824  # 1GB in bytes
+      threshold: 1073741824  # 1GB
       comparison: ">"
     - metric: restart_count
       threshold: 3
       comparison: ">="
-    - metric: up
-      threshold: 1
-      comparison: "=="
-      for_states: []  # if service is not up (up=0) triggers when comparison "==" 1 fails? Actually we'd check up==0 separately. Better: use metric "up" with threshold 0 and comparison "==" to alert when down.
-      # Alternatively simpler: just check if up==0 via rule:
-      # metric: up, threshold: 0, comparison: "=="
-    # Example: alert if service is down:
     - metric: up
       threshold: 0
       comparison: "=="
@@ -100,7 +95,6 @@ alert:
       webhook_url: "https://hooks.slack.com/services/..."
       username: "Docker Bot"
       icon_emoji: ":rotating_light:"
-      # channel: "#alerts"  # optional, overrides webhook default
 
     - type: discord
       webhook_url: "https://discord.com/api/webhooks/..."
@@ -118,6 +112,16 @@ alert:
       from_addr: "monitor@example.com"
       to_addrs: ["admin@example.com"]
       use_tls: true
+
+# Optional filtering
+include_services: []      # Only include these services (if empty, all)
+exclude_services: []      # Exclude these services
+favorite_services: []     # Mark services as favorites for special attention
+favorites_only: false     # If true, monitor only favorites (ignores include/exclude)
+
+# Smart alerts (state-change deduplication)
+smart_alerts: false       # Send alerts only on state changes, not while condition persists
+state_file: ""            # Path to store alert state (default: ~/.docker-health-monitor-state.json)
 ```
 
 ### Run monitor manually
@@ -142,8 +146,8 @@ The `--json` flag suppresses table output when run from cron.
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `docker_compose_service_up` | gauge | `service` | 1 if running, 0 otherwise |
-| `docker_compose_container_state` | gauge | `service`, `state` | 1 if container in given state (running, exited, unhealthy…) |
-| `docker_compose_restart_count` | gauge | `service` | How many times container restarted (absolute value) |
+| `docker_compose_container_state` | gauge | `service`, `state` | 1 if container in given state (running, exited, unhealthy…). Исправлено: устаревшие состояния сбрасываются, метрика всегда отражает текущее состояние. |
+| `docker_compose_restart_count` | gauge | `service` | How many times container restarted |
 | `docker_compose_cpu_percent` | gauge | `service` | CPU usage % |
 | `docker_compose_memory_bytes` | gauge | `service` | Memory usage in bytes |
 
@@ -152,7 +156,7 @@ The `--json` flag suppresses table output when run from cron.
 scrape_configs:
   - job_name: 'docker-compose'
     static_configs:
-      - targets: ['localhost:8000']  # expose порт по умолчанию
+      - targets: ['localhost:8000']
 ```
 
 ---
@@ -161,11 +165,15 @@ scrape_configs:
 
 ### Option 1: YAML file (`.docker-health-monitor.yaml`)
 ```yaml
-compose_path: "/opt/media/docker-compose.yml"  # если не указан — ищет в текущей dir и выше
-interval: 30                                    # scrape interval в секундах
-include_services: ["jellyfin", "sonarr"]       # только эти сервисы (опционально)
-exclude_services: ["watchtower"]               # исключить эти сервисы
-alert:                                           # alert configuration as shown above
+compose_path: "/opt/media/docker-compose.yml"
+interval: 30
+include_services: ["jellyfin", "sonarr"]   # optional filter
+exclude_services: ["watchtower"]
+favorite_services: ["jellyfin"]            # mark favorites
+favorites_only: false                      # monitor only favorites?
+smart_alerts: false                        # deduplicate alerts on state changes
+state_file: ""                             # path for alert state (default: ~/.docker-health-monitor-state.json)
+alert:
   rules: [...]
   channels: [...]
 ```
@@ -176,8 +184,46 @@ export DOCKER_HEALTH_COMPOSE_PATH="/opt/media/docker-compose.yml"
 export DOCKER_HEALTH_INTERVAL=15
 export DOCKER_HEALTH_INCLUDE_SERVICES="jellyfin,sonarr,radarr"
 export DOCKER_HEALTH_EXCLUDE_SERVICES="watchtower"
+export DOCKER_HEALTH_FAVORITE_SERVICES="jellyfin"
+export DOCKER_HEALTH_FAVORITES_ONLY="false"
+export DOCKER_HEALTH_SMART_ALERTS="false"
+export DOCKER_HEALTH_STATE_FILE=""
 ```
-Note: Alert config cannot be set via env vars yet; use YAML file.
+Note: Alert config cannot be set via env vars; use YAML file.
+
+---
+
+## 🧠 Smart Alerts (Deduplication)
+
+When `smart_alerts: true` is enabled, the monitor will send notifications only when an alert condition **starts** or **changes** (e.g., from OK to alerting). It will not resend the same alert on every check while the condition persists. This prevents notification spam.
+
+A small state file (default `~/.docker-health-monitor-state.json`) keeps track of the last known state per rule. The state is automatically cleaned up after 30 days.
+
+**How it works:**
+- For each service + metric + rule, we remember the last value and whether it was alerting.
+- If the rule is still triggered on the next run, no new alert is sent.
+- When the metric returns to normal, the state is cleared, so the next trigger will fire again.
+- If the monitor itself restarts, it uses the saved state to continue deduplication.
+
+Enable it in config:
+
+```yaml
+smart_alerts: true
+# optional custom path
+state_file: "/path/to/state.json"
+```
+
+---
+
+## 📺 Live Watch Mode
+
+Use `watch` command for continuous monitoring with auto-refreshing table:
+
+```bash
+docker-health-monitor watch --compose-path /path/to/docker-compose.yml --interval 5
+```
+
+Press `Ctrl+C` to stop.
 
 ---
 
@@ -186,17 +232,17 @@ Note: Alert config cannot be set via env vars yet; use YAML file.
 Готовый JSON дашборд в файле [`grafana-dashboard.json`](grafana-dashboard.json).
 
 **Что показывает:**
-- 🟢/🔴 Service status (green/red)
-- 📈 CPU Usage % (graph)
-- 💾 Memory Usage (bytes)
-- 🔄 Container Restarts (rate)
-- 📋 Service States (table)
+- 🟢/🔴 Service status
+- 📈 CPU Usage %
+- 💾 Memory Usage
+- 🔄 Container Restarts
+- 📋 Service States
 
 **Импорт:**
-1. Открой Grafana → + → Import
-2. Загрузи `grafana-dashboard.json` или paste JSON
+1. Grafana → + → Import
+2. Загрузи `grafana-dashboard.json` или вставь JSON
 3. Выбери Prometheus data source
-4. Enjoy!
+4. Готово
 
 ---
 
@@ -214,7 +260,7 @@ docker run -d \
   kernelghost/docker-health-monitor:latest
 ```
 
-The container will run the exporter on port 8000. To run monitor instead, use:
+To run monitor instead:
 ```bash
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
@@ -231,18 +277,12 @@ docker run --rm \
 git clone https://github.com/kernelghost557/docker-health-monitor.git
 cd docker-health-monitor
 
-# Install dependencies (venv)
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 
-# Run tests
 pytest --cov
-
-# Lint
 ruff check src tests
-
-# Type checking
 mypy src tests
 ```
 
@@ -250,23 +290,20 @@ mypy src tests
 ```
 docker-health-monitor/
 ├── src/docker_health_monitor/
-│   ├── collector.py   # сбор метрик через Docker CLI
-│   ├── exporter.py    # HTTP endpoint (/metrics) для Prometheus
-│   ├── alerter.py     # проверка правил и отправка уведомлений
-│   ├── config.py      # конфигурация (incl. alert)
-│   ├── cli.py         # CLI (click): status, serve, monitor
+│   ├── collector.py
+│   ├── exporter.py
+│   ├── alerter.py
+│   ├── config.py
+│   ├── cli.py
 │   └── __init__.py
 ├── tests/
-│   ├── test_collector.py
-│   ├── test_exporter.py
-│   └── test_alerter.py   # coming soon
 ├── .github/workflows/ci.yml
 ├── Dockerfile
 ├── docker-compose.yml
 ├── grafana-dashboard.json
 ├── pyproject.toml
 ├── .pre-commit-config.yaml
-└── README.md (this file)
+└── README.md
 ```
 
 ---
@@ -278,6 +315,7 @@ docker-health-monitor/
 | `status` | Print table of services | `docker-health-monitor status --compose-path ./docker-compose.yml` |
 | `serve` | Run HTTP server exposing `/metrics` | `docker-health-monitor serve --port 8000 --interval 30` |
 | `monitor` | Check health and send alerts | `docker-health-monitor monitor --config .docker-health-monitor.yaml` |
+| `watch` | Live monitoring with auto-refresh | `docker-health-monitor watch --interval 5` |
 | `--help` | Show help | `docker-health-monitor --help` |
 
 ---

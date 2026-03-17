@@ -4,18 +4,20 @@ import json
 import logging
 import signal
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
 import click
 from rich.console import Console
+from rich.live import Live
 from rich.table import Table
 from socketserver import ThreadingMixIn
 
 from .collector import DockerComposeCollector
 from .exporter import MetricsExporter
 from .config import DockerHealthConfig
-from .alerter import Alerter
+from .alerter import Alerter, AlertStateManager
 
 console = Console()
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -141,6 +143,54 @@ def serve(compose_path: Optional[Path], port: int):
 
 @main.command()
 @click.option("--compose-path", type=click.Path(path_type=Path), help="Path to docker-compose.yml")
+@click.option("--interval", default=5, type=int, help="Refresh interval in seconds")
+def watch(compose_path: Optional[Path], interval: int):
+    """Continuously monitor services with live updating table."""
+    collector = DockerComposeCollector(compose_path=compose_path)
+
+    def make_table():
+        try:
+            metrics = collector.get_metrics()
+        except Exception as e:
+            table = Table(title=f"Error: {e}")
+            return table
+
+        table = Table(title=f"Docker Compose Services (live, refresh every {interval}s)")
+        table.add_column("Service", style="cyan")
+        table.add_column("Container", style="magenta")
+        table.add_column("Up", justify="center")
+        table.add_column("State", style="yellow")
+        table.add_column("Restarts", justify="right")
+        table.add_column("CPU %", justify="right")
+        table.add_column("Memory", justify="right")
+
+        for m in metrics:
+            up_str = "[green]●[/green]" if m.up else "[red]○[/red]"
+            state_color = "green" if m.up else "red"
+            mem_mb = m.memory_bytes / (1024*1024)
+            mem_str = f"{mem_mb:.1f} MiB"
+            table.add_row(
+                m.name,
+                m.container_name,
+                up_str,
+                f"[{state_color}]{m.state}[/{state_color}]",
+                str(m.restart_count),
+                f"{m.cpu_percent:.2f}%",
+                mem_str,
+            )
+        return table
+
+    try:
+        with Live(make_table(), refresh_per_second=1/interval, screen=True):
+            while True:
+                time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopped by user[/yellow]")
+        sys.exit(0)
+
+
+@main.command()
+@click.option("--compose-path", type=click.Path(path_type=Path), help="Path to docker-compose.yml")
 @click.option("--config", "config_path", type=click.Path(path_type=Path), help="Path to config file")
 @click.option("--json/--no-json", default=False, help="Output raw JSON instead of table")
 def monitor(compose_path: Optional[Path], config_path: Optional[Path], json: bool):
@@ -163,6 +213,9 @@ def monitor(compose_path: Optional[Path], config_path: Optional[Path], json: boo
         metrics = [m for m in metrics if m.name in cfg.include_services]
     if cfg.exclude_services:
         metrics = [m for m in metrics if m.name not in cfg.exclude_services]
+    # Apply favorites filter
+    if cfg.favorites_only and cfg.favorite_services:
+        metrics = [m for m in metrics if m.name in cfg.favorite_services]
 
     # Show status table if not json
     if not json:
@@ -192,7 +245,11 @@ def monitor(compose_path: Optional[Path], config_path: Optional[Path], json: boo
 
     # Check alerts
     if cfg.alert.rules and cfg.alert.channels:
-        alerter = Alerter(rules=cfg.alert.rules, channels=cfg.alert.channels)
+        state_manager = None
+        if cfg.smart_alerts:
+            state_file = cfg.state_file or (Path.home() / ".docker-health-monitor-state.json")
+            state_manager = AlertStateManager(state_file)
+        alerter = Alerter(rules=cfg.alert.rules, channels=cfg.alert.channels, state_manager=state_manager)
         alerts_sent = alerter.check_and_alert(metrics)
         if alerts_sent > 0:
             console.print(f"[yellow]Sent {alerts_sent} alert notifications[/yellow]")

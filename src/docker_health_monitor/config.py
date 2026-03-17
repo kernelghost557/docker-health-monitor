@@ -73,6 +73,10 @@ class DockerHealthConfig:
     interval: int = 30
     include_services: List[str] = field(default_factory=list)
     exclude_services: List[str] = field(default_factory=list)
+    favorite_services: List[str] = field(default_factory=list)
+    favorites_only: bool = False
+    smart_alerts: bool = False
+    state_file: Optional[Path] = None
     alert: AlertConfig = field(default_factory=AlertConfig)
 
     @classmethod
@@ -106,6 +110,11 @@ class DockerHealthConfig:
         interval = data.get("interval", 30)
         include_services = data.get("include_services", [])
         exclude_services = data.get("exclude_services", [])
+        favorite_services = data.get("favorite_services", [])
+        favorites_only = data.get("favorites_only", False)
+        smart_alerts = data.get("smart_alerts", False)
+        state_file_str = data.get("state_file")
+        state_file = Path(state_file_str) if state_file_str else None
         alert_data = data.get("alert", {})
         alert_config = AlertConfig.from_dict(alert_data)
         return cls(
@@ -113,5 +122,9 @@ class DockerHealthConfig:
             interval=interval,
             include_services=include_services,
             exclude_services=exclude_services,
+            favorite_services=favorite_services,
+            favorites_only=favorites_only,
+            smart_alerts=smart_alerts,
+            state_file=state_file,
             alert=alert_config,
         )
