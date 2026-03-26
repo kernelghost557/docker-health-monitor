@@ -1,0 +1,72 @@
+# Example configuration for docker-health-monitor with alerting
+
+# Path to your docker-compose.yml (optional if you run in the same directory)
+compose_path: "./docker-compose.yml"
+
+# Check interval in seconds
+interval: 30
+
+# Service filtering (optional)
+#include_services: ["app", "db", "redis"]
+#exclude_services: ["adminer"]
+
+# Favorites mode (optional)
+#favorites_only: false
+#favorite_services: ["app", "db"]
+
+# Smart alerts: deduplicate and send only on state changes
+smart_alerts: true
+state_file: "~/.docker-health-monitor-state.json"
+
+# Alerting configuration
+alert:
+  rules:
+    # Alert if CPU > 80% for any service
+    - metric: "cpu_percent"
+      threshold: 80
+      comparison: ">"
+      for_states: ["running"]
+
+    # Alert if memory > 500 MiB (memory_bytes in bytes)
+    - metric: "memory_bytes"
+      threshold: 524288000  # 500 * 1024 * 1024
+      comparison: ">"
+      for_states: ["running"]
+
+    # Alert if container restarted more than 3 times
+    - metric: "restart_count"
+      threshold: 3
+      comparison: ">"
+      for_states: ["running"]
+
+    # Alert if service is down
+    - metric: "up"
+      threshold: 1
+      comparison: "=="
+      for_states: ["running"]
+
+  channels:
+    # Telegram notification
+    - type: "telegram"
+      bot_token: "YOUR_BOT_TOKEN"
+      chat_id: "YOUR_CHAT_ID"
+      parse_mode: "HTML"
+
+    # Slack notification
+    #- type: "slack"
+    #  webhook_url: "https://hooks.slack.com/services/..."
+    #  username: "Docker Health Monitor"
+    #  channel: "#alerts"
+
+    # Discord notification
+    #- type: "discord"
+    #  webhook_url: "https://discord.com/api/webhooks/..."
+
+    # Email notification
+    #- type: "email"
+    #  smtp_host: "smtp.gmail.com"
+    #  smtp_port: 587
+    #  username: "user@example.com"
+    #  password: "YOUR_PASSWORD"
+    #  from_addr: "monitor@example.com"
+    #  to_addrs: ["admin@example.com"]

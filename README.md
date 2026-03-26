@@ -68,6 +68,8 @@ You can configure alert thresholds and notification channels. Then run `docker-h
 
 ### Configuration file (`.docker-health-monitor.yaml`)
 
+See `examples/config-with-alerts.yaml` for a complete configuration with Telegram alerts.
+
 ```yaml
 # Path to docker-compose.yml (optional, auto-detected if omitted)
 compose_path: "/opt/media/docker-compose.yml"
